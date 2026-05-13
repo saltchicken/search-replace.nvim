@@ -22,13 +22,33 @@ function M.apply_blocks(content)
 		local file_text = f:read("*all")
 		f:close()
 
-		-- Literal match: escape special Lua pattern characters
-		local escaped_search = search:gsub("([^%w])", "%%%1")
+		-- 1. Normalize line endings (strip \r to prevent Windows/Unix mismatch)
+		search = search:gsub("\r", "")
+		replace = replace:gsub("\r", "")
 
-		if file_text:find(escaped_search, 1, true) then
-			local new_text = file_text:gsub(escaped_search, function()
+		-- 2. Strip trailing whitespace from search to prevent the flexible
+		-- pattern from greedily eating next-line indentation
+		search = search:gsub("%s+$", "")
+		if search == "" then
+			vim.notify("[search_replace.nvim] ⚠️ Empty SEARCH block in " .. path, vim.log.levels.WARN)
+			goto continue
+		end
+
+		-- 3. Safely escape Lua pattern magic characters
+		local escaped_search = search:gsub("([%^%$%(%)%%%.%[%]%*%+%-%?])", "%%%1")
+
+		-- 4. Make whitespace flexible:
+		-- Replace horizontal spaces/tabs with a class that matches one or more
+		escaped_search = escaped_search:gsub("[ \t]+", "[ \t]+")
+		-- Replace newlines with %s+ to tolerate \r\n, varying indentation, or extra blank lines
+		local flex_pattern = escaped_search:gsub("\n", "%%s+")
+
+		-- 5. Find and Replace using the flexible pattern
+		if file_text:find(flex_pattern) then
+			-- Limit to 1 replacement to avoid unintended side effects on identical lines
+			local new_text = file_text:gsub(flex_pattern, function()
 				return replace
-			end)
+			end, 1)
 
 			local out = io.open(full_path, "w")
 			out:write(new_text)
