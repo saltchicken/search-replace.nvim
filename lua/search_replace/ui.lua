@@ -3,8 +3,8 @@ local logic = require("search-replace.logic")
 
 function M.open_input()
 	local buf = vim.api.nvim_create_buf(false, true)
-	local width = vim.api.nvim_get_option_value("columns", {})
-	local height = vim.api.nvim_get_option_value("lines", {})
+	local width = vim.api.nvim_get_option("columns")
+	local height = vim.api.nvim_get_option("lines")
 	local win_width = math.floor(width * 0.8)
 	local win_height = math.floor(height * 0.8)
 
