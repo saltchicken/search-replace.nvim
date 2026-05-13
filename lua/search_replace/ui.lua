@@ -18,6 +18,11 @@ function M.open_input()
 		"-- <CR> to Apply | q to Cancel --",
 		"",
 	})
+	vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
+		"-- PASTE SEARCH/REPLACE BLOCKS --",
+		"-- <CR> to Apply | q to Cancel --",
+		"",
+	})
 
 	local win = vim.api.nvim_open_win(buf, true, {
 		style = "minimal",
@@ -32,7 +37,7 @@ function M.open_input()
 	})
 
 	-- Put cursor inside the SEARCH block
-	vim.api.nvim_win_set_cursor(win, { 6, 0 })
+	vim.api.nvim_win_set_cursor(win, { 3, 0 })
 
 	-- Automatically start in insert mode to make pasting faster
 	vim.cmd("startinsert")
