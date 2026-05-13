@@ -15,6 +15,10 @@ function M.apply_blocks(content)
 		end
 
 		local f = io.open(full_path, "r")
+		if not f then
+			vim.notify("[search_replace.nvim] Permission denied reading: " .. path, vim.log.levels.ERROR)
+			goto continue
+		end
 		local file_text = f:read("*all")
 		f:close()
 
