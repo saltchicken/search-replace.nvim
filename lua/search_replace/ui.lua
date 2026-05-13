@@ -1,10 +1,15 @@
 local M = {}
-local logic = require("search-replace.logic")
+local logic = require("search_replace.logic")
 
 function M.open_input()
 	local buf = vim.api.nvim_create_buf(false, true)
-	local width = vim.api.nvim_get_option("columns")
-	local height = vim.api.nvim_get_option("lines")
+
+	-- Ensure the buffer cleans up after itself
+	vim.api.nvim_set_option_value("bufhidden", "wipe", { buf = buf })
+	vim.api.nvim_set_option_value("buftype", "nofile", { buf = buf })
+
+	local width = vim.api.nvim_get_option_value("columns", {})
+	local height = vim.api.nvim_get_option_value("lines", {})
 	local win_width = math.floor(width * 0.8)
 	local win_height = math.floor(height * 0.8)
 
