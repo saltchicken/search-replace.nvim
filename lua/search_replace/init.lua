@@ -8,7 +8,7 @@ M.setup = function(opts)
 
 	if M.config.mapping then
 		vim.keymap.set("n", M.config.mapping, function()
-			require("search-replace.ui").open_input()
+			require("search_replace.ui").open_input()
 		end, { desc = "Open Search Replace Apply Box" })
 	end
 end

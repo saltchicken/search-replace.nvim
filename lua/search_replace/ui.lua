@@ -1,5 +1,5 @@
 local M = {}
-local logic = require("search-replace.logic")
+local logic = require("search_replace.logic")
 
 function M.open_input()
 	local buf = vim.api.nvim_create_buf(false, true)

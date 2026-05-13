@@ -10,7 +10,7 @@ function M.apply_blocks(content)
 		local full_path = vim.fn.fnamemodify(path, ":p")
 
 		if vim.fn.filereadable(full_path) == 0 then
-			vim.notify("[search-replace.nvim] File not found: " .. path, vim.log.levels.ERROR)
+			vim.notify("[search_replace.nvim] File not found: " .. path, vim.log.levels.ERROR)
 			goto continue
 		end
 
@@ -30,7 +30,7 @@ function M.apply_blocks(content)
 			out:write(new_text)
 			out:close()
 
-			vim.notify("[search-replace.nvim] ✅ Applied: " .. path, vim.log.levels.INFO)
+			vim.notify("[search_replace.nvim] ✅ Applied: " .. path, vim.log.levels.INFO)
 
 			-- Refresh buffers if open
 			for _, buf in ipairs(vim.api.nvim_list_bufs()) do
@@ -41,14 +41,14 @@ function M.apply_blocks(content)
 				end
 			end
 		else
-			vim.notify("[search-replace.nvim] ⚠️ SEARCH block mismatch in " .. path, vim.log.levels.WARN)
+			vim.notify("[search_replace.nvim] ⚠️ SEARCH block mismatch in " .. path, vim.log.levels.WARN)
 		end
 
 		::continue::
 	end
 
 	if not found then
-		vim.notify("[search-replace.nvim] No blocks found in input.", vim.log.levels.WARN)
+		vim.notify("[search_replace.nvim] No blocks found in input.", vim.log.levels.WARN)
 	end
 end
 
