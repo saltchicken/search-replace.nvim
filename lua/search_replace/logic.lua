@@ -1,5 +1,38 @@
 local M = {}
 
+-- Helper to update the buffer if open, otherwise write directly to the file
+local function update_file_or_buffer(full_path, new_text)
+	local updated_buffer = false
+
+	-- Check if the file is loaded in a current buffer
+	for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+		if vim.api.nvim_buf_is_loaded(buf) and vim.api.nvim_buf_get_name(buf) == full_path then
+			local lines = vim.split(new_text, "\n")
+			-- Remove trailing empty line from split to avoid adding extra lines at EOF
+			if lines[#lines] == "" then
+				table.remove(lines)
+			end
+
+			-- Update the buffer directly
+			vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+			updated_buffer = true
+			break
+		end
+	end
+
+	-- If not open in any buffer, write directly to the file system using libuv
+	if not updated_buffer then
+		local uv = vim.uv or vim.loop
+		local fd = uv.fs_open(full_path, "w", 438) -- 438 is octal 0666 permissions
+		if fd then
+			uv.fs_write(fd, new_text)
+			uv.fs_close(fd)
+		else
+			vim.notify("[search_replace.nvim] Failed to write to file: " .. full_path, vim.log.levels.ERROR)
+		end
+	end
+end
+
 function M.apply_blocks(content)
 	local block_pattern = "([^\n]+)\n<<<<<<< SEARCH\n(.-)\n=======\n(.-)\n>>>>>>> REPLACE"
 	local found = false
@@ -14,56 +47,43 @@ function M.apply_blocks(content)
 			goto continue
 		end
 
-		local f = io.open(full_path, "r")
-		if not f then
+		local uv = vim.uv or vim.loop
+		local fd = uv.fs_open(full_path, "r", 438)
+		if not fd then
 			vim.notify("[search_replace.nvim] Permission denied reading: " .. path, vim.log.levels.ERROR)
 			goto continue
 		end
-		local file_text = f:read("*all")
-		f:close()
+
+		-- Read the whole file safely
+		local stat = uv.fs_fstat(fd)
+		local file_text = uv.fs_read(fd, stat.size, 0)
+		uv.fs_close(fd)
 
 		-- 1. Normalize line endings (strip \r to prevent Windows/Unix mismatch)
-		search = search:gsub("\r", "")
+		search = search:gsub("\r", ""):gsub("%s+$", "")
 		replace = replace:gsub("\r", "")
 
-		-- 2. Strip trailing whitespace from search to prevent the flexible
-		-- pattern from greedily eating next-line indentation
-		search = search:gsub("%s+$", "")
 		if search == "" then
 			vim.notify("[search_replace.nvim] ⚠️ Empty SEARCH block in " .. path, vim.log.levels.WARN)
 			goto continue
 		end
 
-		-- 3. Safely escape Lua pattern magic characters
+		-- 2. Safely escape Lua pattern magic characters
 		local escaped_search = search:gsub("([%^%$%(%)%%%.%[%]%*%+%-%?])", "%%%1")
 
-		-- 4. Make whitespace flexible:
-		-- Replace horizontal spaces/tabs with a class that matches one or more
+		-- 3. Make whitespace flexible:
 		escaped_search = escaped_search:gsub("[ \t]+", "[ \t]+")
-		-- Replace newlines with %s+ to tolerate \r\n, varying indentation, or extra blank lines
 		local flex_pattern = escaped_search:gsub("\n", "%%s+")
 
-		-- 5. Find and Replace using the flexible pattern
+		-- 4. Find and Replace using the flexible pattern
 		if file_text:find(flex_pattern) then
-			-- Limit to 1 replacement to avoid unintended side effects on identical lines
 			local new_text = file_text:gsub(flex_pattern, function()
 				return replace
 			end, 1)
 
-			local out = io.open(full_path, "w")
-			out:write(new_text)
-			out:close()
-
+			-- Use our new smart update function
+			update_file_or_buffer(full_path, new_text)
 			vim.notify("[search_replace.nvim] ✅ Applied: " .. path, vim.log.levels.INFO)
-
-			-- Refresh buffers if open
-			for _, buf in ipairs(vim.api.nvim_list_bufs()) do
-				if vim.api.nvim_buf_get_name(buf) == full_path then
-					vim.api.nvim_buf_call(buf, function()
-						vim.cmd("checktime")
-					end)
-				end
-			end
 		else
 			vim.notify("[search_replace.nvim] ⚠️ SEARCH block mismatch in " .. path, vim.log.levels.WARN)
 		end
