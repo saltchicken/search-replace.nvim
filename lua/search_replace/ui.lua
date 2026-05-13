@@ -17,13 +17,6 @@ function M.open_input()
 		"-- PASTE SEARCH/REPLACE BLOCKS --",
 		"-- <CR> to Apply | q to Cancel --",
 		"",
-		"path/to/your/file.ext",
-		"<<<<<<< SEARCH",
-		"",
-		"=======",
-		"",
-		">>>>>>> REPLACE",
-		"",
 	})
 
 	local win = vim.api.nvim_open_win(buf, true, {
