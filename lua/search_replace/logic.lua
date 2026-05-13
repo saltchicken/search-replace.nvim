@@ -52,12 +52,15 @@ local function update_file_or_buffer(full_path, new_text)
 end
 
 function M.apply_blocks(content)
-	local found = false
-	local pos = 1
-	local current_path = nil
+    -- Sanitize Non-Breaking Spaces (NBSP) commonly introduced by LLM web interfaces
+    content = content:gsub("\194\160", " ")
 
-	-- Sequential parser to maintain the `current_path` state across chained blocks
-	while pos <= #content do
+    local found = false
+    local pos = 1
+    local current_path = nil
+
+    -- Sequential parser to maintain the `current_path` state across chained blocks
+    while pos <= #content do
 		local search_s, search_e = content:find("<<<<<<< SEARCH\n", pos, true)
 		local create_s, create_e = content:find("<<<<<<< CREATE\n", pos, true)
 
