@@ -76,19 +76,19 @@ function M.apply_blocks(content)
 		local start_idx = is_search and search_s or create_s
 		local end_idx = is_search and search_e or create_e
 
-		-- Extract path from text before the block
-		local pre_text = vim.trim(content:sub(pos, start_idx - 1))
-		if pre_text ~= "" then
-			local lines = vim.split(pre_text, "\n")
-			-- Find the last non-empty line that isn't a closing block tag
-			for i = #lines, 1, -1 do
-				local line = vim.trim(lines[i])
-				if line ~= "" and not line:match("^>>>>>>>") then
-					current_path = line
-					break
-				end
-			end
-		end
+        -- Extract path from text before the block
+        local pre_text = vim.trim(content:sub(pos, start_idx - 1))
+        if pre_text ~= "" then
+            local lines = vim.split(pre_text, "\n")
+            -- Find the last non-empty line that isn't a closing block tag or markdown fence
+            for i = #lines, 1, -1 do
+                local line = vim.trim(lines[i])
+                if line ~= "" and not line:match("^>>>>>>>") and not line:match("^```") then
+                    current_path = line
+                    break
+                end
+            end
+        end
 
 		if not current_path then
 			vim.notify("[search_replace.nvim] Skipping block: No file path found.", vim.log.levels.WARN)
