@@ -181,19 +181,26 @@ function M.apply_blocks(content)
 						escaped_search = escaped_search:gsub("[ \t]+", "[ \t]+")
 						local flex_pattern = escaped_search:gsub("\n", "%%s+")
 
-						if file_text:find(flex_pattern) then
-							local new_text = file_text:gsub(flex_pattern, function()
-								return replace_text
-							end, 1)
+                        -- Try an exact plain-text match first (faster and avoids "pattern too complex" errors on huge blocks)
+                        local exact_start, exact_end = file_text:find(search_text, 1, true)
 
-							update_file_or_buffer(full_path, new_text)
-							vim.notify("[search_replace.nvim] ✅ Applied: " .. current_path, vim.log.levels.INFO)
-						else
-							vim.notify(
-								"[search_replace.nvim] ⚠️ SEARCH block mismatch in " .. current_path,
-								vim.log.levels.WARN
-							)
-						end
+                        if exact_start then
+                            local new_text = file_text:sub(1, exact_start - 1) .. replace_text .. file_text:sub(exact_end + 1)
+                            update_file_or_buffer(full_path, new_text)
+                            vim.notify("[search_replace.nvim] ✅ Applied (Exact Match): " .. current_path, vim.log.levels.INFO)
+                        elseif file_text:find(flex_pattern) then
+                            local new_text = file_text:gsub(flex_pattern, function()
+                                return replace_text
+                            end, 1)
+
+                            update_file_or_buffer(full_path, new_text)
+                            vim.notify("[search_replace.nvim] ✅ Applied (Flex Match): " .. current_path, vim.log.levels.INFO)
+                        else
+                            vim.notify(
+                                "[search_replace.nvim] ⚠️ SEARCH block mismatch in " .. current_path,
+                                vim.log.levels.WARN
+                            )
+                        end
 					end
 				end
 			end
