@@ -61,20 +61,33 @@ function M.apply_blocks(content)
 
     -- Sequential parser to maintain the `current_path` state across chained blocks
     while pos <= #content do
-		local search_s, search_e = content:find("<<<<<<< SEARCH\n", pos, true)
-		local create_s, create_e = content:find("<<<<<<< CREATE\n", pos, true)
+        local search_s, search_e = content:find("<<<<<<< SEARCH\n", pos, true)
+        local create_s, create_e = content:find("<<<<<<< CREATE\n", pos, true)
+        local delete_s, delete_e = content:find("<<<<<<< DELETE\n", pos, true)
+        local move_s, move_e = content:find("<<<<<<< MOVE\n", pos, true)
 
-		local is_search = search_s and (not create_s or search_s < create_s)
-		local is_create = create_s and (not search_s or create_s < search_s)
+        local blocks = {}
+        if search_s then table.insert(blocks, { type = "search", s = search_s, e = search_e }) end
+        if create_s then table.insert(blocks, { type = "create", s = create_s, e = create_e }) end
+        if delete_s then table.insert(blocks, { type = "delete", s = delete_s, e = delete_e }) end
+        if move_s then table.insert(blocks, { type = "move", s = move_s, e = move_e }) end
 
-        if not is_search and not is_create then
+        if #blocks == 0 then
             break
         end
 
+        table.sort(blocks, function(a, b) return a.s < b.s end)
+        local first_block = blocks[1]
+
+        local is_search = first_block.type == "search"
+        local is_create = first_block.type == "create"
+        local is_delete = first_block.type == "delete"
+        local is_move = first_block.type == "move"
+
         blocks_found = blocks_found + 1
 
-        local start_idx = is_search and search_s or create_s
-		local end_idx = is_search and search_e or create_e
+        local start_idx = first_block.s
+        local end_idx = first_block.e
 
         -- Extract path from text before the block
         local pre_text = vim.trim(content:sub(pos, start_idx - 1))
@@ -133,9 +146,65 @@ function M.apply_blocks(content)
                 end
             end
 
-			pos = close_e + 1
-		elseif is_search then
-			local div_s, div_e = content:find("\n=======\n", end_idx, true)
+            pos = close_e + 1
+        elseif is_delete then
+            local close_s, close_e = content:find("\n>>>>>>> DELETE", end_idx, true)
+            if not close_s then
+                break
+            end
+
+            if vim.fn.filereadable(full_path) == 1 then
+                local choice = vim.fn.confirm("Delete file: " .. current_path .. "?", "&Yes\n&No", 2)
+                if choice == 1 then
+                    if vim.fn.delete(full_path) == 0 then
+                        for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+                            if vim.api.nvim_buf_is_loaded(buf) and vim.api.nvim_buf_get_name(buf) == full_path then
+                                vim.api.nvim_buf_delete(buf, { force = true })
+                                break
+                            end
+                        end
+                        vim.notify("[search_replace.nvim] 🗑️ Deleted: " .. current_path, vim.log.levels.INFO)
+                    else
+                        vim.notify("[search_replace.nvim] ❌ Failed to delete: " .. current_path, vim.log.levels.ERROR)
+                    end
+                else
+                    vim.notify("[search_replace.nvim] ⏭️ Skipped DELETE (User rejected): " .. current_path, vim.log.levels.INFO)
+                end
+            else
+                vim.notify("[search_replace.nvim] ❌ File not found for DELETE: " .. current_path, vim.log.levels.ERROR)
+            end
+
+            pos = close_e + 1
+        elseif is_move then
+            local close_s, close_e = content:find("\n>>>>>>> MOVE", end_idx, true)
+            if not close_s then
+                break
+            end
+
+            local new_path_raw = vim.trim(content:sub(end_idx + 1, close_s - 1))
+            local new_full_path = vim.fn.fnamemodify(new_path_raw, ":p")
+
+            if vim.fn.filereadable(full_path) == 1 then
+                vim.fn.mkdir(vim.fn.fnamemodify(new_full_path, ":h"), "p")
+                if vim.fn.rename(full_path, new_full_path) == 0 then
+                    for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+                        if vim.api.nvim_buf_is_loaded(buf) and vim.api.nvim_buf_get_name(buf) == full_path then
+                            vim.api.nvim_buf_set_name(buf, new_full_path)
+                            vim.api.nvim_buf_call(buf, function() vim.cmd("silent! write") end)
+                            break
+                        end
+                    end
+                    vim.notify("[search_replace.nvim] 🚚 Moved: " .. current_path .. " -> " .. new_path_raw, vim.log.levels.INFO)
+                else
+                    vim.notify("[search_replace.nvim] ❌ Failed to move: " .. current_path, vim.log.levels.ERROR)
+                end
+            else
+                vim.notify("[search_replace.nvim] ❌ File not found for MOVE: " .. current_path, vim.log.levels.ERROR)
+            end
+
+            pos = close_e + 1
+        elseif is_search then
+            local div_s, div_e = content:find("\n=======\n", end_idx, true)
 			if not div_s then
 				break
 			end
