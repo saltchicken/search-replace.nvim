@@ -106,23 +106,32 @@ function M.apply_blocks(content)
 
 			local create_text = content:sub(end_idx + 1, close_s - 1)
 
-			if vim.fn.filereadable(full_path) == 1 then
-				vim.notify(
-					"[search_replace.nvim] ⚠️ File exists, skipping CREATE: " .. current_path,
-					vim.log.levels.WARN
-				)
-			else
-				vim.fn.mkdir(vim.fn.fnamemodify(full_path, ":h"), "p")
-				local uv = vim.uv or vim.loop
-				local fd = uv.fs_open(full_path, "w", 438)
-				if fd then
-					uv.fs_write(fd, create_text)
-					uv.fs_close(fd)
-					vim.notify("[search_replace.nvim] 🌟 Created: " .. current_path, vim.log.levels.INFO)
-				else
-					vim.notify("[search_replace.nvim] ❌ Failed to create: " .. current_path, vim.log.levels.ERROR)
-				end
-			end
+            if vim.fn.filereadable(full_path) == 1 then
+                local choice = vim.fn.confirm("File exists: " .. current_path .. "\nOverwrite?", "&Yes\n&No", 2)
+                if choice == 1 then
+                    update_file_or_buffer(full_path, create_text)
+                    vim.notify(
+                        "[search_replace.nvim] ⚠️ File existed, overwritten by CREATE: " .. current_path,
+                        vim.log.levels.WARN
+                    )
+                else
+                    vim.notify(
+                        "[search_replace.nvim] ⏭️ Skipped CREATE (User rejected overwrite): " .. current_path,
+                        vim.log.levels.INFO
+                    )
+                end
+            else
+                vim.fn.mkdir(vim.fn.fnamemodify(full_path, ":h"), "p")
+                local uv = vim.uv or vim.loop
+                local fd = uv.fs_open(full_path, "w", 438)
+                if fd then
+                    uv.fs_write(fd, create_text)
+                    uv.fs_close(fd)
+                    vim.notify("[search_replace.nvim] 🌟 Created: " .. current_path, vim.log.levels.INFO)
+                else
+                    vim.notify("[search_replace.nvim] ❌ Failed to create: " .. current_path, vim.log.levels.ERROR)
+                end
+            end
 
 			pos = close_e + 1
 		elseif is_search then
