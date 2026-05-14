@@ -55,7 +55,7 @@ function M.apply_blocks(content)
     -- Sanitize Non-Breaking Spaces (NBSP) commonly introduced by LLM web interfaces
     content = content:gsub("\194\160", " ")
 
-    local found = false
+    local blocks_found = 0
     local pos = 1
     local current_path = nil
 
@@ -67,13 +67,13 @@ function M.apply_blocks(content)
 		local is_search = search_s and (not create_s or search_s < create_s)
 		local is_create = create_s and (not search_s or create_s < search_s)
 
-		if not is_search and not is_create then
-			break
-		end
+        if not is_search and not is_create then
+            break
+        end
 
-		found = true
+        blocks_found = blocks_found + 1
 
-		local start_idx = is_search and search_s or create_s
+        local start_idx = is_search and search_s or create_s
 		local end_idx = is_search and search_e or create_e
 
         -- Extract path from text before the block
@@ -211,9 +211,11 @@ function M.apply_blocks(content)
 		::continue_loop::
 	end
 
-	if not found then
-		vim.notify("[search_replace.nvim] No blocks found in input.", vim.log.levels.WARN)
-	end
+    if blocks_found == 0 then
+        vim.notify("[search_replace.nvim] No blocks found in input.", vim.log.levels.WARN)
+    elseif blocks_found > 1 then
+        vim.notify("[search_replace.nvim] Processed " .. blocks_found .. " blocks consecutively.", vim.log.levels.INFO)
+    end
 end
 
 return M
