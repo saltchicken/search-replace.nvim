@@ -1,5 +1,24 @@
--- lua/search_replace/logic.lua
 local M = {}
+
+local hl_ns = vim.api.nvim_create_namespace("search_replace_changes")
+
+-- Helper to apply temporary highlights to modified lines
+local function highlight_changes(bufnr, start_line, end_line)
+	for i = start_line, end_line do
+		pcall(vim.api.nvim_buf_set_extmark, bufnr, hl_ns, i, 0, {
+			line_hl_group = "DiffAdd",
+		})
+	end
+
+	-- Clear highlights when the buffer is saved
+	vim.api.nvim_create_autocmd("BufWritePre", {
+		buffer = bufnr,
+		once = true,
+		callback = function()
+			pcall(vim.api.nvim_buf_clear_namespace, bufnr, hl_ns, 0, -1)
+		end,
+	})
+end
 
 -- Helper to check if a file exists on disk or is currently an active unsaved buffer
 local function file_or_buf_exists(full_path)
@@ -11,7 +30,6 @@ local function file_or_buf_exists(full_path)
 end
 
 -- Helper to read from buffer, ensuring the file is loaded into Neovim
--- (Crucial for chained blocks and ensuring the undo history captures all subsequent writes)
 local function read_file_or_buffer(full_path)
 	if not file_or_buf_exists(full_path) then
 		return nil
@@ -26,8 +44,9 @@ local function read_file_or_buffer(full_path)
 	return table.concat(vim.api.nvim_buf_get_lines(target_buf, 0, -1, false), "\n")
 end
 
--- Helper to update the buffer, enforcing buffer usage to preserve undo history
-local function update_file_or_buffer(full_path, new_text)
+-- Helper to update the buffer, enforcing buffer usage to preserve undo history.
+-- Now accepts start_line and end_line for precise surgical replacements.
+local function update_file_or_buffer(full_path, new_text, start_line, end_line)
 	local target_buf = vim.fn.bufadd(full_path)
 	if not vim.api.nvim_buf_is_loaded(target_buf) then
 		vim.fn.bufload(target_buf)
@@ -40,7 +59,16 @@ local function update_file_or_buffer(full_path, new_text)
 		table.remove(lines)
 	end
 
-	vim.api.nvim_buf_set_lines(target_buf, 0, -1, false, lines)
+	start_line = start_line or 0
+	end_line = end_line or -1
+
+	-- Set only the replaced chunk (or whole file if no lines provided)
+	vim.api.nvim_buf_set_lines(target_buf, start_line, end_line, false, lines)
+
+	-- Apply temporary highlights
+	if #lines > 0 then
+		highlight_changes(target_buf, start_line, start_line + #lines - 1)
+	end
 end
 
 -- Helper to ensure the target path strictly resides within the current project root
@@ -348,25 +376,33 @@ function M.apply_blocks(content)
 						escaped_search = escaped_search:gsub("[ \t]+", "[ \t]+")
 						local flex_pattern = escaped_search:gsub("\n", "%%s+")
 
-						-- Try an exact plain-text match first (faster and avoids "pattern too complex" errors on huge blocks)
+						-- Try an exact plain-text match first
 						local exact_start, exact_end = file_text:find(search_text, 1, true)
 
 						if exact_start then
-							local new_text = file_text:sub(1, exact_start - 1)
-								.. replace_text
-								.. file_text:sub(exact_end + 1)
-							update_file_or_buffer(full_path, new_text)
+							-- Calculate target start/end lines
+							local pre_match = file_text:sub(1, exact_start - 1)
+							local start_line = select(2, pre_match:gsub("\n", ""))
+							local match_text = file_text:sub(exact_start, exact_end)
+							local old_lines_count = select(2, match_text:gsub("\n", "")) + 1
+							local end_line = start_line + old_lines_count
+
+							update_file_or_buffer(full_path, replace_text, start_line, end_line)
 							last_modified_path = full_path
 							vim.notify(
 								"[search_replace.nvim] ✅ Applied (Exact Match): " .. current_path,
 								vim.log.levels.INFO
 							)
 						elseif file_text:find(flex_pattern) then
-							local new_text = file_text:gsub(flex_pattern, function()
-								return replace_text
-							end, 1)
+							-- Calculate target start/end lines for flex match
+							local flex_start, flex_end = file_text:find(flex_pattern)
+							local pre_match = file_text:sub(1, flex_start - 1)
+							local start_line = select(2, pre_match:gsub("\n", ""))
+							local match_text = file_text:sub(flex_start, flex_end)
+							local old_lines_count = select(2, match_text:gsub("\n", "")) + 1
+							local end_line = start_line + old_lines_count
 
-							update_file_or_buffer(full_path, new_text)
+							update_file_or_buffer(full_path, replace_text, start_line, end_line)
 							last_modified_path = full_path
 							vim.notify(
 								"[search_replace.nvim] ✅ Applied (Flex Match): " .. current_path,
