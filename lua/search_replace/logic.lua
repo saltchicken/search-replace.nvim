@@ -1,54 +1,38 @@
 -- lua/search_replace/logic.lua
 local M = {}
 
--- Helper to read from buffer if open, otherwise read from file system
--- (Crucial for chained blocks: ensures we read the newly updated text from the buffer)
+-- Helper to read from buffer, ensuring the file is loaded into Neovim
+-- (Crucial for chained blocks and ensuring the undo history captures all subsequent writes)
 local function read_file_or_buffer(full_path)
-	for _, buf in ipairs(vim.api.nvim_list_bufs()) do
-		if vim.api.nvim_buf_is_loaded(buf) and vim.api.nvim_buf_get_name(buf) == full_path then
-			return table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n")
-		end
-	end
+    if vim.fn.filereadable(full_path) == 0 then
+        return nil
+    end
 
-	local uv = vim.uv or vim.loop
-	local fd = uv.fs_open(full_path, "r", 438)
-	if not fd then
-		return nil
-	end
-
-	local stat = uv.fs_fstat(fd)
-	local text = uv.fs_read(fd, stat.size, 0)
-	uv.fs_close(fd)
-	return text
+    local target_buf = vim.fn.bufadd(full_path)
+    if not vim.api.nvim_buf_is_loaded(target_buf) then
+        vim.fn.bufload(target_buf)
+    end
+    
+    vim.api.nvim_set_option_value("buflisted", true, { buf = target_buf })
+    return table.concat(vim.api.nvim_buf_get_lines(target_buf, 0, -1, false), "\n")
 end
 
--- Helper to update the buffer if open, otherwise write directly to the file
+-- Helper to update the buffer, enforcing buffer usage to preserve undo history
 local function update_file_or_buffer(full_path, new_text)
-	local updated_buffer = false
-
-	for _, buf in ipairs(vim.api.nvim_list_bufs()) do
-		if vim.api.nvim_buf_is_loaded(buf) and vim.api.nvim_buf_get_name(buf) == full_path then
-			local lines = vim.split(new_text, "\n")
-			if lines[#lines] == "" then
-				table.remove(lines)
-			end
-
-			vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-			updated_buffer = true
-			break
-		end
-	end
-
-    if not updated_buffer then
-        local uv = vim.uv or vim.loop
-        local fd = uv.fs_open(full_path, "w", 438)
-        if fd then
-            uv.fs_write(fd, new_text)
-            uv.fs_close(fd)
-        else
-            vim.notify("[search_replace.nvim] Failed to write to file: " .. full_path, vim.log.levels.ERROR)
-        end
+    local target_buf = vim.fn.bufadd(full_path)
+    if not vim.api.nvim_buf_is_loaded(target_buf) then
+        vim.fn.bufload(target_buf)
     end
+    
+    vim.api.nvim_set_option_value("buflisted", true, { buf = target_buf })
+
+    local lines = vim.split(new_text, "\n")
+    if lines[#lines] == "" then
+        table.remove(lines)
+    end
+
+    vim.api.nvim_buf_set_lines(target_buf, 0, -1, false, lines)
+    vim.api.nvim_buf_call(target_buf, function() vim.cmd("silent! write") end)
 end
 
 -- Helper to ensure the target path strictly resides within the current project root
@@ -151,15 +135,8 @@ function M.apply_blocks(content)
                 end
             else
                 vim.fn.mkdir(vim.fn.fnamemodify(full_path, ":h"), "p")
-                local uv = vim.uv or vim.loop
-                local fd = uv.fs_open(full_path, "w", 438)
-                if fd then
-                    uv.fs_write(fd, create_text)
-                    uv.fs_close(fd)
-                    vim.notify("[search_replace.nvim] 🌟 Created: " .. current_path, vim.log.levels.INFO)
-                else
-                    vim.notify("[search_replace.nvim] ❌ Failed to create: " .. current_path, vim.log.levels.ERROR)
-                end
+                update_file_or_buffer(full_path, create_text)
+                vim.notify("[search_replace.nvim] 🌟 Created: " .. current_path, vim.log.levels.INFO)
             end
 
             pos = close_e + 1
@@ -241,21 +218,14 @@ function M.apply_blocks(content)
 
 			if vim.fn.filereadable(full_path) == 0 then
 				search_text = search_text:gsub("\r", ""):gsub("%s+$", "")
-				if search_text == "" then
-					vim.fn.mkdir(vim.fn.fnamemodify(full_path, ":h"), "p")
-					local uv = vim.uv or vim.loop
-					local fd = uv.fs_open(full_path, "w", 438)
-					if fd then
-						uv.fs_write(fd, replace_text)
-						uv.fs_close(fd)
-						vim.notify(
-							"[search_replace.nvim] 🌟 Created (Empty Search): " .. current_path,
-							vim.log.levels.INFO
-						)
-					else
-						vim.notify("[search_replace.nvim] ❌ Failed to create: " .. current_path, vim.log.levels.ERROR)
-					end
-				else
+                    if search_text == "" then
+                        vim.fn.mkdir(vim.fn.fnamemodify(full_path, ":h"), "p")
+                        update_file_or_buffer(full_path, replace_text)
+                        vim.notify(
+                            "[search_replace.nvim] 🌟 Created (Empty Search): " .. current_path,
+                            vim.log.levels.INFO
+                        )
+                    else
 					vim.notify("[search_replace.nvim] ❌ File not found: " .. current_path, vim.log.levels.ERROR)
 				end
 			else
