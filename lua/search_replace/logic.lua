@@ -39,16 +39,26 @@ local function update_file_or_buffer(full_path, new_text)
 		end
 	end
 
-	if not updated_buffer then
-		local uv = vim.uv or vim.loop
-		local fd = uv.fs_open(full_path, "w", 438)
-		if fd then
-			uv.fs_write(fd, new_text)
-			uv.fs_close(fd)
-		else
-			vim.notify("[search_replace.nvim] Failed to write to file: " .. full_path, vim.log.levels.ERROR)
-		end
-	end
+    if not updated_buffer then
+        local uv = vim.uv or vim.loop
+        local fd = uv.fs_open(full_path, "w", 438)
+        if fd then
+            uv.fs_write(fd, new_text)
+            uv.fs_close(fd)
+        else
+            vim.notify("[search_replace.nvim] Failed to write to file: " .. full_path, vim.log.levels.ERROR)
+        end
+    end
+end
+
+-- Helper to ensure the target path strictly resides within the current project root
+local function is_safe_path(full_path)
+    local cwd = vim.fn.getcwd()
+    local sep = package.config:sub(1, 1)
+    if cwd:sub(-1) ~= sep then
+        cwd = cwd .. sep
+    end
+    return vim.startswith(full_path, cwd)
 end
 
 function M.apply_blocks(content)
@@ -103,15 +113,21 @@ function M.apply_blocks(content)
             end
         end
 
-		if not current_path then
-			vim.notify("[search_replace.nvim] Skipping block: No file path found.", vim.log.levels.WARN)
-			pos = end_idx + 1
-			goto continue_loop
-		end
+        if not current_path then
+            vim.notify("[search_replace.nvim] Skipping block: No file path found.", vim.log.levels.WARN)
+            pos = end_idx + 1
+            goto continue_loop
+        end
 
-		local full_path = vim.fn.fnamemodify(current_path, ":p")
+        local full_path = vim.fn.fnamemodify(current_path, ":p")
 
-		if is_create then
+        if not is_safe_path(full_path) then
+            vim.notify("[search_replace.nvim] Skipping block: Path outside project root (" .. current_path .. ").", vim.log.levels.ERROR)
+            pos = end_idx + 1
+            goto continue_loop
+        end
+
+        if is_create then
 			local close_s, close_e = content:find("\n>>>>>>> CREATE", end_idx, true)
 			if not close_s then
 				break
@@ -183,6 +199,12 @@ function M.apply_blocks(content)
 
             local new_path_raw = vim.trim(content:sub(end_idx + 1, close_s - 1))
             local new_full_path = vim.fn.fnamemodify(new_path_raw, ":p")
+
+            if not is_safe_path(new_full_path) then
+                vim.notify("[search_replace.nvim] Skipping MOVE: Destination outside project root (" .. new_path_raw .. ").", vim.log.levels.ERROR)
+                pos = close_e + 1
+                goto continue_loop
+            end
 
             if vim.fn.filereadable(full_path) == 1 then
                 vim.fn.mkdir(vim.fn.fnamemodify(new_full_path, ":h"), "p")
