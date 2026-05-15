@@ -3,9 +3,9 @@ local M = {}
 local hl_ns = vim.api.nvim_create_namespace("search_replace_changes")
 
 -- Helper to apply temporary highlights to modified lines
-local function highlight_changes(bufnr, start_line, end_line)
-	for i = start_line, end_line do
-		pcall(vim.api.nvim_buf_set_extmark, bufnr, hl_ns, i, 0, {
+local function highlight_changes(bufnr, changed_lines)
+	for _, line in ipairs(changed_lines) do
+		pcall(vim.api.nvim_buf_set_extmark, bufnr, hl_ns, line, 0, {
 			line_hl_group = "DiffAdd",
 		})
 	end
@@ -62,12 +62,37 @@ local function update_file_or_buffer(full_path, new_text, start_line, end_line)
 	start_line = start_line or 0
 	end_line = end_line or -1
 
+	local old_lines = vim.api.nvim_buf_get_lines(target_buf, start_line, end_line, false)
+
 	-- Set only the replaced chunk (or whole file if no lines provided)
 	vim.api.nvim_buf_set_lines(target_buf, start_line, end_line, false, lines)
 
-	-- Apply temporary highlights
+	-- Apply temporary highlights to new or modified lines only
 	if #lines > 0 then
-		highlight_changes(target_buf, start_line, start_line + #lines - 1)
+		local changed_lines = {}
+		local old_text = table.concat(old_lines, "\n") .. "\n"
+		local new_text_formatted = table.concat(lines, "\n") .. "\n"
+
+		local ok, diff = pcall(vim.diff, old_text, new_text_formatted, { result_type = "indices" })
+		if ok and type(diff) == "table" then
+			for _, hunk in ipairs(diff) do
+				local start_new = hunk[3]
+				local count_new = hunk[4]
+				if count_new > 0 then
+					for i = 0, count_new - 1 do
+						table.insert(changed_lines, start_line + start_new - 1 + i)
+					end
+				end
+			end
+		else
+			for i = 1, #lines do
+				table.insert(changed_lines, start_line + i - 1)
+			end
+		end
+
+		if #changed_lines > 0 then
+			highlight_changes(target_buf, changed_lines)
+		end
 	end
 end
 
