@@ -53,6 +53,24 @@ local function is_safe_path(full_path)
 	return vim.startswith(full_path, cwd)
 end
 
+-- Helper to verify write permissions on disk and buffer modifiable state
+local function is_writable(full_path)
+	if vim.fn.filereadable(full_path) == 1 and vim.fn.filewritable(full_path) == 0 then
+		return false
+	end
+
+	local bufnr = vim.fn.bufnr(full_path)
+	if bufnr ~= -1 and vim.api.nvim_buf_is_loaded(bufnr) then
+		local modifiable = vim.api.nvim_get_option_value("modifiable", { buf = bufnr })
+		local readonly = vim.api.nvim_get_option_value("readonly", { buf = bufnr })
+		if not modifiable or readonly then
+			return false
+		end
+	end
+
+	return true
+end
+
 function M.apply_blocks(content)
 	-- Sanitize Non-Breaking Spaces (NBSP) commonly introduced by LLM web interfaces
 	content = content:gsub("\194\160", " ")
@@ -126,6 +144,15 @@ function M.apply_blocks(content)
 		if not is_safe_path(full_path) then
 			vim.notify(
 				"[search_replace.nvim] Skipping block: Path outside project root (" .. current_path .. ").",
+				vim.log.levels.ERROR
+			)
+			pos = end_idx + 1
+			goto continue_loop
+		end
+
+		if not is_writable(full_path) then
+			vim.notify(
+				"[search_replace.nvim] Skipping block: Permission denied or read-only (" .. current_path .. ").",
 				vim.log.levels.ERROR
 			)
 			pos = end_idx + 1
@@ -220,6 +247,15 @@ function M.apply_blocks(content)
 			if file_or_buf_exists(full_path) then
 				local proceed = true
 				if file_or_buf_exists(new_full_path) then
+					if not is_writable(new_full_path) then
+						vim.notify(
+							"[search_replace.nvim] Skipping MOVE: Destination is read-only (" .. new_path_raw .. ").",
+							vim.log.levels.ERROR
+						)
+						pos = close_e + 1
+						goto continue_loop
+					end
+
 					local choice =
 						vim.fn.confirm("Destination exists: " .. new_path_raw .. "\nOverwrite?", "&Yes\n&No", 2)
 					if choice ~= 1 then
