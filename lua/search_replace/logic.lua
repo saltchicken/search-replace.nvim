@@ -73,7 +73,7 @@ local function update_file_or_buffer(full_path, new_text, start_line, end_line)
 		local old_text = table.concat(old_lines, "\n") .. "\n"
 		local new_text_formatted = table.concat(lines, "\n") .. "\n"
 
-		local ok, diff = pcall(vim.diff, old_text, new_text_formatted, { result_type = "indices" })
+		local ok, diff = pcall(vim.text.diff, old_text, new_text_formatted, { result_type = "indices" })
 		if ok and type(diff) == "table" then
 			for _, hunk in ipairs(diff) do
 				local start_new = hunk[3]
