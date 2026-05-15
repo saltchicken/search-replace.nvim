@@ -78,6 +78,7 @@ function M.apply_blocks(content)
 	local blocks_found = 0
 	local pos = 1
 	local current_path = nil
+	local last_modified_path = nil
 
 	-- Sequential parser to maintain the `current_path` state across chained blocks
 	while pos <= #content do
@@ -171,6 +172,7 @@ function M.apply_blocks(content)
 				local choice = vim.fn.confirm("File exists: " .. current_path .. "\nOverwrite?", "&Yes\n&No", 2)
 				if choice == 1 then
 					update_file_or_buffer(full_path, create_text)
+					last_modified_path = full_path
 					vim.notify(
 						"[search_replace.nvim] ⚠️ File existed, overwritten by CREATE: " .. current_path,
 						vim.log.levels.WARN
@@ -184,6 +186,7 @@ function M.apply_blocks(content)
 			else
 				vim.fn.mkdir(vim.fn.fnamemodify(full_path, ":h"), "p")
 				update_file_or_buffer(full_path, create_text)
+				last_modified_path = full_path
 				vim.notify("[search_replace.nvim] 🌟 Created: " .. current_path, vim.log.levels.INFO)
 			end
 
@@ -281,6 +284,7 @@ function M.apply_blocks(content)
 								break
 							end
 						end
+						last_modified_path = new_full_path
 						vim.notify(
 							"[search_replace.nvim] 🚚 Moved: " .. current_path .. " -> " .. new_path_raw,
 							vim.log.levels.INFO
@@ -313,6 +317,7 @@ function M.apply_blocks(content)
 				if search_text == "" then
 					vim.fn.mkdir(vim.fn.fnamemodify(full_path, ":h"), "p")
 					update_file_or_buffer(full_path, replace_text)
+					last_modified_path = full_path
 					vim.notify(
 						"[search_replace.nvim] 🌟 Created (Empty Search): " .. current_path,
 						vim.log.levels.INFO
@@ -351,6 +356,7 @@ function M.apply_blocks(content)
 								.. replace_text
 								.. file_text:sub(exact_end + 1)
 							update_file_or_buffer(full_path, new_text)
+							last_modified_path = full_path
 							vim.notify(
 								"[search_replace.nvim] ✅ Applied (Exact Match): " .. current_path,
 								vim.log.levels.INFO
@@ -361,6 +367,7 @@ function M.apply_blocks(content)
 							end, 1)
 
 							update_file_or_buffer(full_path, new_text)
+							last_modified_path = full_path
 							vim.notify(
 								"[search_replace.nvim] ✅ Applied (Flex Match): " .. current_path,
 								vim.log.levels.INFO
@@ -385,6 +392,13 @@ function M.apply_blocks(content)
 		vim.notify("[search_replace.nvim] No blocks found in input.", vim.log.levels.WARN)
 	elseif blocks_found > 1 then
 		vim.notify("[search_replace.nvim] Processed " .. blocks_found .. " blocks consecutively.", vim.log.levels.INFO)
+	end
+
+	if last_modified_path then
+		local bufnr = vim.fn.bufnr(last_modified_path)
+		if bufnr ~= -1 then
+			vim.api.nvim_set_current_buf(bufnr)
+		end
 	end
 end
 
