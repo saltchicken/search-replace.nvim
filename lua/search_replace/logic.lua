@@ -1,10 +1,19 @@
 -- lua/search_replace/logic.lua
 local M = {}
 
+-- Helper to check if a file exists on disk or is currently an active unsaved buffer
+local function file_or_buf_exists(full_path)
+	if vim.fn.filereadable(full_path) == 1 then
+		return true
+	end
+	local bufnr = vim.fn.bufnr(full_path)
+	return bufnr ~= -1 and vim.api.nvim_buf_is_loaded(bufnr)
+end
+
 -- Helper to read from buffer, ensuring the file is loaded into Neovim
 -- (Crucial for chained blocks and ensuring the undo history captures all subsequent writes)
 local function read_file_or_buffer(full_path)
-	if vim.fn.filereadable(full_path) == 0 then
+	if not file_or_buf_exists(full_path) then
 		return nil
 	end
 
@@ -32,9 +41,6 @@ local function update_file_or_buffer(full_path, new_text)
 	end
 
 	vim.api.nvim_buf_set_lines(target_buf, 0, -1, false, lines)
-	vim.api.nvim_buf_call(target_buf, function()
-		vim.cmd("silent! write")
-	end)
 end
 
 -- Helper to ensure the target path strictly resides within the current project root
@@ -134,7 +140,7 @@ function M.apply_blocks(content)
 
 			local create_text = content:sub(end_idx + 1, close_s - 1)
 
-			if vim.fn.filereadable(full_path) == 1 then
+			if file_or_buf_exists(full_path) then
 				local choice = vim.fn.confirm("File exists: " .. current_path .. "\nOverwrite?", "&Yes\n&No", 2)
 				if choice == 1 then
 					update_file_or_buffer(full_path, create_text)
@@ -161,10 +167,14 @@ function M.apply_blocks(content)
 				break
 			end
 
-			if vim.fn.filereadable(full_path) == 1 then
+			if file_or_buf_exists(full_path) then
 				local choice = vim.fn.confirm("Delete file: " .. current_path .. "?", "&Yes\n&No", 2)
 				if choice == 1 then
-					if vim.fn.delete(full_path) == 0 then
+					local disk_deleted = true
+					if vim.fn.filereadable(full_path) == 1 then
+						disk_deleted = (vim.fn.delete(full_path) == 0)
+					end
+					if disk_deleted then
 						for _, buf in ipairs(vim.api.nvim_list_bufs()) do
 							if vim.api.nvim_buf_is_loaded(buf) and vim.api.nvim_buf_get_name(buf) == full_path then
 								vim.api.nvim_buf_delete(buf, { force = true })
@@ -207,9 +217,9 @@ function M.apply_blocks(content)
 				goto continue_loop
 			end
 
-			if vim.fn.filereadable(full_path) == 1 then
+			if file_or_buf_exists(full_path) then
 				local proceed = true
-				if vim.fn.filereadable(new_full_path) == 1 then
+				if file_or_buf_exists(new_full_path) then
 					local choice =
 						vim.fn.confirm("Destination exists: " .. new_path_raw .. "\nOverwrite?", "&Yes\n&No", 2)
 					if choice ~= 1 then
@@ -223,13 +233,15 @@ function M.apply_blocks(content)
 
 				if proceed then
 					vim.fn.mkdir(vim.fn.fnamemodify(new_full_path, ":h"), "p")
-					if vim.fn.rename(full_path, new_full_path) == 0 then
+					local rename_success = true
+					if vim.fn.filereadable(full_path) == 1 then
+						rename_success = (vim.fn.rename(full_path, new_full_path) == 0)
+					end
+
+					if rename_success then
 						for _, buf in ipairs(vim.api.nvim_list_bufs()) do
 							if vim.api.nvim_buf_is_loaded(buf) and vim.api.nvim_buf_get_name(buf) == full_path then
 								vim.api.nvim_buf_set_name(buf, new_full_path)
-								vim.api.nvim_buf_call(buf, function()
-									vim.cmd("silent! write")
-								end)
 								break
 							end
 						end
@@ -260,7 +272,7 @@ function M.apply_blocks(content)
 			local search_text = content:sub(end_idx + 1, div_s - 1)
 			local replace_text = content:sub(div_e + 1, close_s - 1)
 
-			if vim.fn.filereadable(full_path) == 0 then
+			if not file_or_buf_exists(full_path) then
 				search_text = search_text:gsub("\r", ""):gsub("%s+$", "")
 				if search_text == "" then
 					vim.fn.mkdir(vim.fn.fnamemodify(full_path, ":h"), "p")
